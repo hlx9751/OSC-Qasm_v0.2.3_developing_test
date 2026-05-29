@@ -100,6 +100,32 @@ optional arguments:
 
 To learn more about `--token`, `--hub`, `--group`, and `--project` please visit https://quantum-computing.ibm.com. The `--headless` tag is explained above in the [CLI](#cli) section. The `--remote` tag is further explained in the [Network Distribution](#network-distribution) section below.
 
+### Execution Backends
+
+The current `osc_qasm.py` supports the following backend categories:
+
+- `qasm_simulator`
+  - Runs locally with a `Statevector`-based sampling path.
+  - This project currently does not require `qiskit-aer`.
+
+- `Fake*` backends from `qiskit_ibm_runtime.fake_provider`
+  - Examples: `FakeManilaV2`, `FakeJakartaV2`, `FakeTorino`, `FakeFez`.
+  - The fake backend class is used for transpilation constraints and for retrieving backend snapshot data.
+  - Returned counts are post-processed with readout-noise snapshot values such as `prob_meas0_prep1` and `prob_meas1_prep0`.
+  - This means fake backends can affect counts even without `qiskit-aer`, but only through readout-noise modeling in the current implementation.
+
+- Real IBM Quantum backends
+  - Any non-fake backend name is treated as a real IBM Runtime backend when `--token` is supplied.
+  - Execution is done through `QiskitRuntimeService` and `SamplerV2`.
+
+Examples:
+
+```console
+python osc_qasm.py --headless
+python osc_qasm.py --headless --token YOUR_API_KEY --hub us-east --project open-instance
+python osc_qasm.py --headless --remote
+```
+
 ### Network Distribution
 
 Version 1.3.0 brought new options for facilitating distributed network scenarios.
