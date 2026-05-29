@@ -54,20 +54,19 @@
 								</td>
 								<td>
 									<div id="ibmq" style="display:none;">
-										<label title="You need to provide your IBMQ token (see https://quantum-computing.ibm.com/account)" for="token">Token:</label><br>
-										<input title="You need to provide your IBMQ token (see https://quantum-computing.ibm.com/account)" type="password" id="token" name="token" value="false"><br><br>
-										<label title="You need to provide your IBMQ Hub (see https://quantum-computing.ibm.com/account)" for="hub">Hub:</label><br>
-										<input title="You need to provide your IBMQ Hub (see https://quantum-computing.ibm.com/account)" type="text" id="hub" name="hub" value="ibm-q"><br><br>
-										<label title="you need to provide your IBMQ Group (see https://quantum-computing.ibm.com/account)" for="group">Group:</label><br>
-										<input title="you need to provide your IBMQ Group (see https://quantum-computing.ibm.com/account)" type="text" id="group" name="group" value="open"><br><br>
-										<label title="You need to provide your IBMQ Project (see https://quantum-computing.ibm.com/account)" for="project">Project:</label><br>
-										<input title="You need to provide your IBMQ Project (see https://quantum-computing.ibm.com/account)" type="text" id="project" name="project" value="main">
-									</div>
-								</td>
-							</tr>
-						</table>
-						<br><br>
-						<input id="submit" type="submit" value="Start">
+                                        <label title="Token (IBM Cloud API Key)" for="token">Token (IBM Cloud API Key):</label><br>
+                                        <input title="Token (IBM Cloud API Key)" type="password" id="token" name="token" value="false"><br><br>
+                                        <label title="Runtime region (e.g. us-east or eu-de)" for="hub">Hub:</label><br>
+                                        <input title="Runtime region (e.g. us-east or eu-de)" type="text" id="hub" name="hub" value="us-east"><br><br>
+                                        <!-- Group removed -->
+                                        <label title="Project (CRN)" for="project">Project (CRN):</label><br>
+                                        <input title="Project (CRN)" type="text" id="project" name="project" value="open-instance">
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                        <br><br>
+                        <input id="submit" type="submit" value="Start">
 					</form>
 					<br><br>
 				</div>
@@ -135,8 +134,7 @@
 		var remote_check = document.getElementById('remote_check').checked;
 		var token = document.getElementById('token').value;
 		var hub = document.getElementById('hub').value;
-		var group = document.getElementById('group').value;
-		var project = document.getElementById('project').value;
+        var project = document.getElementById('project').value;
 
 		function update_vars() {
 			receive_port = document.getElementById('receive_port').value;
@@ -151,8 +149,7 @@
 			}
 			token = document.getElementById('token').value;
 			hub = document.getElementById('hub').value;
-			group = document.getElementById('group').value;
-			project = document.getElementById('project').value;
+            project = document.getElementById('project').value;
 		}
 
 		function remote_checkbox(check){
@@ -174,13 +171,13 @@
 		}
 
 		function startstop(){
-			if (submit=="Start") {
-				eel.start(ip,receive_port,send_port,token,hub,group,project,remote);
-				document.getElementById('submit').value = "Stop";
-			} else {
-				eel.stop();
-				document.getElementById('submit').value = "Start";
-			}
+            if (submit=="Start") {
+                eel.start(ip,receive_port,send_port,token,hub,project,remote);
+                document.getElementById('submit').value = "Stop";
+            } else {
+                eel.stop();
+                document.getElementById('submit').value = "Start";
+            }
 		}
 	</script>
 </body>
