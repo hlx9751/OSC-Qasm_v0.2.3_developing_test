@@ -291,7 +291,7 @@ Note that you Don't need to boot _scsynth_ (`s.boot` command) in order to send o
 Please also note that, as explained in the [Running Server](#running-server) section above, the first job usually takes additional time to complete, as some resources need to be loaded in the server.
 
 ## Build
-Before starting, make sure you have [Python](https://www.python.org/) 3.7+ in your system.
+Before starting, make sure you have [Python](https://www.python.org/) 3.10+ in your system.
 - when using the installer on windows make sure to select the option `Add Python X to PATH`
 
 Clone or [download](https://github.com/iccmr-quantum/OSC-Qasm/archive/refs/heads/main.zip) and unzip this repo.
