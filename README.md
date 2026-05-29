@@ -68,8 +68,7 @@ When you're done working with _OSC-Qasm_ you can stop it by pressing `Ctrl+C`.
 Whether you are running _OSC-Qasm 2_ in **GUI** mode or **CLI** mode, using the compiled application, or building from source, you can configure your server by using some additional arguments and flags. The list below, that you can retrieve from running the `--help` argument, includes a detailed description of each option.
 
 ```console
-usage: osc_qasm.py [-h] [--token TOKEN] [--hub HUB] [--group GROUP]
-                   [--project PROJECT]
+usage: osc_qasm.py [-h] [--token TOKEN] [--hub HUB] [--project PROJECT]
                    [receive_port] [send_port] [ip]
 
 positional arguments:
@@ -85,12 +84,10 @@ positional arguments:
 optional arguments:
   -h, --help              show this help message and exit
   --token TOKEN           If you want to run circuits on real quantum hardware, you
-                          need to provide your IBMQ token (see https://quantum-
-                          computing.ibm.com/account)
+                          need to provide your IBM Cloud API Key (see https://
+                          cloud.ibm.com/iam/apikeys)
   --hub HUB               If you want to run circuits on real quantum hardware, you
                           need to provide your IBMQ Hub
-  --group GROUP           If you want to run circuits on real quantum hardware, you
-                          need to provide your IBMQ Group
   --project PROJECT       If you want to run circuits on real quantum hardware, you
                           need to provide your IBMQ Project
   --remote [REMOTE]       Declare this as a remote server. In this case, OSC-Qasm
