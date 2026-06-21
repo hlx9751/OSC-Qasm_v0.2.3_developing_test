@@ -277,29 +277,6 @@ def _direct_cloud_sampler(backend_name, shots, qc):
         CLOUD_ERR = f"Runtime Error: {e}"
         return None
 
-class FileLikeOutputOSC(object):
-    ''' This class emulates a File-Like object
-        with a "write()" method that can be used
-        by print() and qiskit.tools.job_monitor()
-        as an alternative output (replacing sys.stdout)
-        to send messages through the OSC-Qasm client
-
-        usage: print("foo", file=FileLikeOutputOSC())
-        '''
-
-    def write(self, text):
-        if text != f'\n' and text != "": # Skips end='\n'|'' argument messages
-            print(text) # uiprint back to console
-
-            # Send message body back to Max on info channel
-            # We strip the timestamp if present to keep it clean
-            msg = text
-            if len(msg) > 12 and msg[12] == ':': # naive timestamp check
-                 msg = msg[12:]
-            
-            # Send to Max
-            client.send_message("/info", msg)
-
 class FileLikeErrorOSC(object):
     ''' This class emulates a File-Like object
         with a "write()" method that can be used
