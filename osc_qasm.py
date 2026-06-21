@@ -8,11 +8,8 @@
 
 from pythonosc import dispatcher, osc_server, udp_client
 from qiskit import QuantumCircuit, transpile
-from qiskit.quantum_info import Statevector
+from qiskit.quantum_info import Statevector  # 🚩 Optional
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
-_IBM_RUNTIME_AVAILABLE = True
-
-Sampler = None
 import argparse
 import sys
 import eel
@@ -22,23 +19,9 @@ import numpy as np
 import importlib
 import re
 import time
-import os
-import subprocess
-import datetime
 
 provider = None
 CLOUD_TOKEN = None
-
-LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'osc_qasm_debug.log')
-
-def log_to_file(msg):
-    try:
-        with open(LOG_FILE_PATH, 'a', encoding='utf-8') as f:
-            ts = datetime.datetime.now().strftime('%H:%M:%S')
-            f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass
-
 CLOUD_INSTANCE = None
 CLOUD_REGION = None
 CLOUD_ERR = None
@@ -173,10 +156,6 @@ def _apply_readout_noise_from_backend(counts, shots, backend):
         out[sbs] = out.get(sbs, 0) + 1
     return out
 
-def _run_local_job(qc, shots, backend):
-    tc = transpile(qc, backend)
-    return backend.run(tc, shots=shots)
-
 def _configure_runtime(token, region, instance):
     global provider, CLOUD_TOKEN, CLOUD_INSTANCE, CLOUD_REGION
     provider = None
@@ -203,7 +182,7 @@ def ensure_provider():
     if provider:
         return provider
     try:
-        if not (_IBM_RUNTIME_AVAILABLE and token):
+        if not token:
             provider = None
             return provider
         try:
@@ -250,9 +229,6 @@ def _direct_cloud_sampler(backend_name, shots, qc):
         if SamplerV2:
             sampler = SamplerV2(mode=backend)
             job = sampler.run([isa_qc], shots=int(shots))
-        elif Sampler:
-            sampler = Sampler(backend=backend)
-            job = sampler.run(circuits=[isa_qc], shots=int(shots))
         else:
             CLOUD_ERR = "Qiskit Runtime Sampler is unavailable."
             return None
@@ -310,15 +286,10 @@ class FileLikeOutputOSC(object):
 
         usage: print("foo", file=FileLikeOutputOSC())
         '''
-    def __init__(self):
-        pass
 
     def write(self, text):
         if text != f'\n' and text != "": # Skips end='\n'|'' argument messages
             print(text) # uiprint back to console
-            
-            # Log to file
-            log_to_file(f"[STDOUT] {text}")
 
             # Send message body back to Max on info channel
             # We strip the timestamp if present to keep it clean
@@ -328,11 +299,6 @@ class FileLikeOutputOSC(object):
             
             # Send to Max
             client.send_message("/info", msg)
-            
-            # ALSO SEND TO TERMINAL (Standard Output)
-            # This ensures you can see it in the VS Code / System terminal
-            # independent of the GUI log
-            sys.__stdout__.write(f"[LOG] {text}\n")
 
 class FileLikeErrorOSC(object):
     ''' This class emulates a File-Like object
@@ -349,12 +315,6 @@ class FileLikeErrorOSC(object):
     def write(self, text):
         if text != f'\n' and text != "": # Skips end='\n'|'' argument messages
             print(text) # uiprint back to console
-
-            # Log to file
-            log_to_file(f"[STDERR] {text}")
-
-            # Log to terminal for debugging
-            sys.__stdout__.write(f"[ERR] {text}\n")
 
             if text == ERR_SEP and self.older != ERR_SEP and self.older != "": # There is a line like ERR_SEP both at the begining and end of a qiskit error log!
                 # uiprint the last entry before the ending ERR_SEP
@@ -547,26 +507,10 @@ if __name__ == '__main__':
         eel.init('GUI')
 
     def uiprint(*message):
-        text = " ".join(map(str, message))
-        log_to_file(f"[UI] {text}")
-        
         if HEADLESS:
             print(*message)
         else:
             eel.print(*message)
-
-    # Initialize log file
-    with open(LOG_FILE_PATH, 'w', encoding='utf-8') as f:
-        f.write(f"--- OSC-Qasm Log Started at {datetime.datetime.now()} ---\n")
-
-    # Launch separate terminal window to tail the log
-    try:
-        if not HEADLESS: # Only pop up window if in GUI mode
-            uiprint(f"Opening debug log window for: {LOG_FILE_PATH}")
-            cmd = f'tail -f "{LOG_FILE_PATH}"'
-            subprocess.Popen(['osascript', '-e', f'tell application "Terminal" to do script "{cmd}"'])
-    except Exception as e:
-        print(f"Failed to open log window: {e}")
 
     uiprint('================================================')
     uiprint(' OSC_QASM by OCH & Itaborala @ QuTune (v2.1.2) ')
