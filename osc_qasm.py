@@ -8,7 +8,7 @@
 
 from pythonosc import dispatcher, osc_server, udp_client
 from qiskit import QuantumCircuit, transpile
-from qiskit.quantum_info import Statevector  # 🚩 Optional
+from qiskit.quantum_info import Statevector  # 🚩 
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 import argparse
 import sys
@@ -19,12 +19,6 @@ import numpy as np
 import importlib
 import re
 import time
-
-provider = None
-CLOUD_TOKEN = None
-CLOUD_INSTANCE = None
-CLOUD_REGION = None
-CLOUD_ERR = None
 
 # Normalize instance input to avoid runtime crashes when CRN is malformed
 CNR_PATTERN = re.compile(r"^crn:v\d:bluemix:public:quantum-computing:[\w-]+:a/[^:]+:[^:]+::?$")
@@ -157,13 +151,15 @@ def _apply_readout_noise_from_backend(counts, shots, backend):
     return out
 
 def _configure_runtime(token, region, instance):
-    global provider, CLOUD_TOKEN, CLOUD_INSTANCE, CLOUD_REGION
-    provider = None
-    CLOUD_TOKEN = token if token and token != "false" else None
-    CLOUD_INSTANCE = instance if instance else None
-    CLOUD_REGION = region if region else 'us-east'
-    if CLOUD_TOKEN:
-        ensure_provider()
+    runtime = {
+        "provider": None,
+        "token": token if token and token != "false" else None,
+        "instance": instance if instance else None,
+        "region": region if region else "us-east",
+    }
+    if runtime["token"]:
+        ensure_provider(runtime)
+    return runtime
 
 def _resolve_local_ip(remote_value):
     if remote_value in (None, "None"):
@@ -174,19 +170,18 @@ def _resolve_local_ip(remote_value):
         return remote_value
     return "127.0.0.1"
 
-def ensure_provider():
-    global provider
-    token = CLOUD_TOKEN
-    instance = _normalize_instance(CLOUD_INSTANCE)
-    region = _normalize_region(CLOUD_REGION)
-    if provider:
-        return provider
+def ensure_provider(runtime):
+    token = runtime["token"]
+    instance = _normalize_instance(runtime["instance"])
+    region = _normalize_region(runtime["region"])
+    if runtime["provider"]:
+        return runtime["provider"]
     try:
         if not token:
-            provider = None
-            return provider
+            runtime["provider"] = None
+            return runtime["provider"]
         try:
-            provider = QiskitRuntimeService(
+            runtime["provider"] = QiskitRuntimeService(
                 channel="ibm_cloud",
                 token=token,
                 instance=instance or "open-instance",
@@ -194,31 +189,27 @@ def ensure_provider():
             )
         except TypeError:
             try:
-                provider = QiskitRuntimeService(
+                runtime["provider"] = QiskitRuntimeService(
                     channel="ibm_cloud",
                     cloud_api_key=token,
                     instance=instance or "open-instance",
                     cloud_region=region,
                 )
             except Exception:
-                provider = None
+                runtime["provider"] = None
         except Exception:
-            provider = None
+            runtime["provider"] = None
     except Exception as e:
         uiprint(str(e))
-        provider = None
-    return provider
+        runtime["provider"] = None
+    return runtime["provider"]
 
-def _direct_cloud_sampler(backend_name, shots, qc):
+def _direct_cloud_sampler(runtime, backend_name, shots, qc):
     try:
-        global CLOUD_ERR
-        CLOUD_ERR = None
-
-        srv = ensure_provider()
+        srv = ensure_provider(runtime)
 
         if not srv:
-            CLOUD_ERR = "Could not initialize QiskitRuntimeService. Check API Key/CRN."
-            return None
+            return None, "Could not initialize QiskitRuntimeService. Check API Key/CRN."
 
         uiprint(f"Qiskit Runtime: getting backend {backend_name}...")
         backend = srv.backend(backend_name)
@@ -230,8 +221,7 @@ def _direct_cloud_sampler(backend_name, shots, qc):
             sampler = SamplerV2(mode=backend)
             job = sampler.run([isa_qc], shots=int(shots))
         else:
-            CLOUD_ERR = "Qiskit Runtime Sampler is unavailable."
-            return None
+            return None, "Qiskit Runtime Sampler is unavailable."
 
         uiprint(f"Job ID: {job.job_id()}")
         deadline = time.time() + 180
@@ -252,14 +242,12 @@ def _direct_cloud_sampler(backend_name, shots, qc):
             if any(x in st_s for x in done_states):
                 break
             if any(x in st_s for x in fail_states):
-                CLOUD_ERR = f"Runtime job failed: {st_s}"
-                return None
+                return None, f"Runtime job failed: {st_s}"
 
             time.sleep(2)
 
         if not (last_status and any(x in last_status for x in done_states)):
-            CLOUD_ERR = f"Runtime timeout waiting for job {job.job_id()} (last status: {last_status or 'unknown'})"
-            return None
+            return None, f"Runtime timeout waiting for job {job.job_id()} (last status: {last_status or 'unknown'})"
 
         result = job.result()
         if SamplerV2:
@@ -268,14 +256,12 @@ def _direct_cloud_sampler(backend_name, shots, qc):
             for field_name in data:
                 field_val = getattr(data, field_name)
                 if hasattr(field_val, 'get_counts'):
-                    return field_val.get_counts()
-            CLOUD_ERR = "Runtime result did not contain counts."
-            return None
+                    return field_val.get_counts(), None
+            return None, "Runtime result did not contain counts."
 
-        return result.quasi_dists[0].binary_probabilities()
+        return result.quasi_dists[0].binary_probabilities(), None
     except Exception as e:
-        CLOUD_ERR = f"Runtime Error: {e}"
-        return None
+        return None, f"Runtime Error: {e}"
 
 class FileLikeErrorOSC(object):
     ''' This class emulates a File-Like object
@@ -304,7 +290,7 @@ class FileLikeErrorOSC(object):
             self.older=text # Update memory
 
 
-def run_circuit(qc, shots, backend_name):
+def run_circuit(runtime, qc, shots, backend_name):
     backend_name = _canonical_backend_name(backend_name)
     if backend_name == 'ibmq_qasm_simulator':
         backend_name = 'qasm_simulator'
@@ -341,15 +327,15 @@ def run_circuit(qc, shots, backend_name):
             client.send_message("/error", msg)
             return {}
 
-    if CLOUD_TOKEN:
+    if runtime["token"]:
         uiprint("Attempting Qiskit Runtime...")
-        counts = _direct_cloud_sampler(backend_name, shots, qc)
+        counts, cloud_err = _direct_cloud_sampler(runtime, backend_name, shots, qc)
         if counts is not None:
             return counts
-        if CLOUD_ERR:
-            uiprint(f"Qiskit Runtime failed: {CLOUD_ERR}")
+        if cloud_err:
+            uiprint(f"Qiskit Runtime failed: {cloud_err}")
             try:
-                client.send_message("/error", CLOUD_ERR)
+                client.send_message("/error", cloud_err)
             except Exception:
                 pass
         return {}
@@ -360,24 +346,17 @@ def run_circuit(qc, shots, backend_name):
     return {}
 
 
-def parse_qasm(*args):
-    global qc
-    qc=QuantumCircuit().from_qasm_str(args[1])
-    if len(args)>2:
+def parse_qasm(runtime, qasm_text, shots_arg=1024, backend_name='qasm_simulator'):
+    qc = QuantumCircuit().from_qasm_str(qasm_text)
+    if shots_arg is not None:
         try:
-            shots = int(args[2])
+            shots = int(shots_arg)
         except Exception:
             shots = 1024
-        pass
     else:
-        shots=1024
+        shots = 1024
 
-    if len(args)>3:
-        backend_name = args[3]
-    else:
-        backend_name='qasm_simulator'
-
-    counts = run_circuit(qc, shots, backend_name)
+    counts = run_circuit(runtime, qc, shots, backend_name)
     uiprint("Sending result counts back to Client")
     client.send_message("/info", "Retrieving results from OSC-Qasm..." )
     # list comprehension that converts a Dict into an
@@ -391,20 +370,31 @@ def parse_qasm(*args):
     counts_list = " ".join(counts_list)
     client.send_message("/counts", counts_list)
 
-# Mapping the OSC Server callback function
-callback = dispatcher.Dispatcher()
-callback.map("/QuTune", parse_qasm)
+def _build_dispatcher(runtime):
+    callback = dispatcher.Dispatcher()
+
+    def _handle_qasm(_address, *osc_args):
+        if not osc_args:
+            return
+        qasm_text = osc_args[0]
+        shots = osc_args[1] if len(osc_args) > 1 else 1024
+        backend_name = osc_args[2] if len(osc_args) > 2 else 'qasm_simulator'
+        parse_qasm(runtime, qasm_text, shots, backend_name)
+
+    callback.map("/QuTune", _handle_qasm)
+    return callback
 
 
 def CLI(UDP_IP, RECEIVE_PORT, SEND_PORT, TOKEN, HUB, PROJECT, REMOTE):
 
     global client, ERR_SEP
     ERR_SEP = '----------------------------------------' # For FileLikeErrorOSC() class
-    _configure_runtime(TOKEN, HUB, PROJECT)
+    runtime = _configure_runtime(TOKEN, HUB, PROJECT)
     if UDP_IP=="localhost":
         UDP_IP="127.0.0.1"
 
     local_ip = _resolve_local_ip(REMOTE)
+    callback = _build_dispatcher(runtime)
 
     #OSC server and client
     server = osc_server.ThreadingOSCUDPServer((local_ip, RECEIVE_PORT), callback)
@@ -428,10 +418,11 @@ async def server_process(args):
     wHUB = args[4]
     wPROJECT = args[5]
     wREMOTE = args[6]
-    _configure_runtime(wTOKEN, wHUB, wPROJECT)
+    runtime = _configure_runtime(wTOKEN, wHUB, wPROJECT)
     if wUDP_IP=="localhost":
         wUDP_IP="127.0.0.1"
     local_ip = _resolve_local_ip(wREMOTE)
+    callback = _build_dispatcher(runtime)
     server = osc_server.AsyncIOOSCUDPServer((local_ip, wRECEIVE_PORT), callback, asyncio.get_event_loop())
     transport, _protocol = await server.create_serve_endpoint()
     client = udp_client.SimpleUDPClient(wUDP_IP, wSEND_PORT)
