@@ -8,7 +8,7 @@
 
 from pythonosc import dispatcher, osc_server, udp_client
 from qiskit import QuantumCircuit, transpile
-from qiskit.quantum_info import Statevector  # 🚩 
+from qiskit.quantum_info import Statevector
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 import argparse
 import sys
@@ -17,34 +17,31 @@ import socket
 import asyncio
 import numpy as np
 import importlib
-import re
 import time
 
-# Normalize instance input to avoid runtime crashes when CRN is malformed
-CNR_PATTERN = re.compile(r"^crn:v\d:bluemix:public:quantum-computing:[\w-]+:a/[^:]+:[^:]+::?$")
-
-def _normalize_instance(inst):
-    if not inst:
+#✅ Normalize instance input to avoid runtime crashes when Instance (CRN) is malformed
+def _normalize_instance(instance):
+    if not instance:
         return "open-instance"
-    s = str(inst).strip()
+    s = str(instance).strip()
     if s.lower() == "open-instance":
         return "open-instance"
-    if inst.startswith("crn:"):
-        return inst
-    if CNR_PATTERN.match(s):
+    if s.startswith("crn:"):
         return s
     return "open-instance"
 
-def _normalize_region(r):
-    if not r:
+#✅ Normalize region input 
+def _normalize_region(region):
+    if not region:
         return "us-east"
-    s = str(r).strip().lower()
+    s = str(region).strip().lower()
     if s in ("us-east", "eu-de"):
         return s
     return "us-east"
 
-def _canonical_backend_name(name):
-    s = str(name).strip()
+#✅ Normalize backend name input
+def _normalize_backend_name(backend_name):
+    s = str(backend_name).strip()
     low = s.lower()
     # Accept snake_case fake backend names from Max/Pd and map to qiskit class naming.
     # Example: fake_torino -> FakeTorino
@@ -53,6 +50,8 @@ def _canonical_backend_name(name):
         return 'Fake' + ''.join(part.capitalize() for part in tail.split('_') if part)
     return s
 
+#✅ Local statevector simulator 
+#❓ This is different from the IBM Runtime, MicroQiskit and och.microqisit approaches, so it may need comparison tests.
 def _local_statevector_counts(qc, shots):
     try:
         qc_nm = qc.remove_final_measurements(inplace=False)
@@ -70,10 +69,10 @@ def _local_statevector_counts(qc, shots):
     samples = np.random.choice(keys, size=int(shots), p=probs)
     counts = {}
     for s in samples:
-        ss = str(s)
-        counts[ss] = counts.get(ss, 0) + 1
+        counts[s] = counts.get(s, 0) + 1
     return counts
 
+#✅ readout error simulation
 def _readout_error_probs(props, qubit):
     p01 = None
     p10 = None
@@ -84,8 +83,7 @@ def _readout_error_probs(props, qubit):
             elif getattr(item, "name", None) == "prob_meas1_prep0":
                 p10 = float(item.value)
     except Exception:
-        p01 = None
-        p10 = None
+        pass
     if p01 is None or p10 is None:
         try:
             ro = float(props.readout_error(int(qubit)))
@@ -97,8 +95,8 @@ def _readout_error_probs(props, qubit):
     p10 = min(max(p10, 0.0), 1.0)
     return p01, p10
 
+#✅ Apply readout noise snapshot
 def _apply_readout_noise_from_backend(counts, shots, backend):
-    props = None
     try:
         props = backend.properties()
     except Exception:
@@ -146,64 +144,69 @@ def _apply_readout_noise_from_backend(counts, shots, backend):
     samples = np.random.choice(keys, size=int(shots), p=probs)
     out = {}
     for bs in samples:
-        sbs = str(bs)
-        out[sbs] = out.get(sbs, 0) + 1
+        out[bs] = out.get(bs, 0) + 1
     return out
 
+#✅ setup Runtime
 def _configure_runtime(token, region, instance):
     runtime = {
         "provider": None,
         "token": token if token and token != "false" else None,
-        "instance": instance if instance else None,
-        "region": region if region else "us-east",
+        "instance": _normalize_instance(instance),
+        "region": _normalize_region(region),
     }
     if runtime["token"]:
         ensure_provider(runtime)
     return runtime
 
+#✅ Local IP resolution 
+#❓ need test
 def _resolve_local_ip(remote_value):
-    if remote_value in (None, "None"):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    if remote_value not in (False, "false"):
+    if remote_value in (False, "false"):
+        return "127.0.0.1"
+    if remote_value not in (None, "None"):
         return remote_value
-    return "127.0.0.1"
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    finally:
+        sock.close()
+
+#✅ Runtime provider initialization
+#❓ This needs testing with a real IBM Runtime login. Compared with the last known working version, I removed one layer of nested try/except.
 def ensure_provider(runtime):
     token = runtime["token"]
-    instance = _normalize_instance(runtime["instance"])
-    region = _normalize_region(runtime["region"])
+    instance = runtime["instance"]
+    region = runtime["region"]
     if runtime["provider"]:
         return runtime["provider"]
+    if not token:
+        return None
     try:
-        if not token:
-            runtime["provider"] = None
-            return runtime["provider"]
+        runtime["provider"] = QiskitRuntimeService(
+            channel="ibm_cloud",
+            token=token,
+            instance=instance,
+            region=region,
+        )
+    except TypeError:
         try:
             runtime["provider"] = QiskitRuntimeService(
                 channel="ibm_cloud",
-                token=token,
-                instance=instance or "open-instance",
-                region=region,
+                cloud_api_key=token,
+                instance=instance,
+                cloud_region=region,
             )
-        except TypeError:
-            try:
-                runtime["provider"] = QiskitRuntimeService(
-                    channel="ibm_cloud",
-                    cloud_api_key=token,
-                    instance=instance or "open-instance",
-                    cloud_region=region,
-                )
-            except Exception:
-                runtime["provider"] = None
-        except Exception:
-            runtime["provider"] = None
+        except Exception as e:
+            uiprint(str(e))
     except Exception as e:
         uiprint(str(e))
-        runtime["provider"] = None
     return runtime["provider"]
 
+#✅ Direct cloud sampler
+#❓ Needs testing on a real IBM Quantum backend. Compared with the last known working version, the legacy sampler-result compatibility code has been removed because this path now targets SamplerV2 only.
 def _direct_cloud_sampler(runtime, backend_name, shots, qc):
     try:
         srv = ensure_provider(runtime)
@@ -217,14 +220,11 @@ def _direct_cloud_sampler(runtime, backend_name, shots, qc):
         isa_qc = transpile(qc, backend=backend, optimization_level=1)
         uiprint("Qiskit Runtime: submitting job...")
 
-        if SamplerV2:
-            sampler = SamplerV2(mode=backend)
-            job = sampler.run([isa_qc], shots=int(shots))
-        else:
-            return None, "Qiskit Runtime Sampler is unavailable."
+        sampler = SamplerV2(mode=backend)
+        job = sampler.run([isa_qc], shots=int(shots))
 
         uiprint(f"Job ID: {job.job_id()}")
-        deadline = time.time() + 180
+        deadline = time.time() + 180 #Adjust the timeout here if needed. A GUI timeout parameter could be added later.
         last_status = None
         done_states = {'done', 'completed'}
         fail_states = {'error', 'failed', 'cancelled', 'canceled'}
@@ -250,19 +250,17 @@ def _direct_cloud_sampler(runtime, backend_name, shots, qc):
             return None, f"Runtime timeout waiting for job {job.job_id()} (last status: {last_status or 'unknown'})"
 
         result = job.result()
-        if SamplerV2:
-            pub_result = result[0]
-            data = pub_result.data
-            for field_name in data:
-                field_val = getattr(data, field_name)
-                if hasattr(field_val, 'get_counts'):
-                    return field_val.get_counts(), None
-            return None, "Runtime result did not contain counts."
-
-        return result.quasi_dists[0].binary_probabilities(), None
+        pub_result = result[0]
+        data = pub_result.data
+        for field_name in data:
+            field_val = getattr(data, field_name)
+            if hasattr(field_val, 'get_counts'):
+                return field_val.get_counts(), None
+        return None, "Runtime result did not contain counts."
     except Exception as e:
         return None, f"Runtime Error: {e}"
 
+#✅ File-like error handler, same as the old version
 class FileLikeErrorOSC(object):
     ''' This class emulates a File-Like object
         with a "write()" method that can be used
@@ -290,10 +288,9 @@ class FileLikeErrorOSC(object):
             self.older=text # Update memory
 
 
+#✅ Run circuit on selected backend
 def run_circuit(runtime, qc, shots, backend_name):
-    backend_name = _canonical_backend_name(backend_name)
-    if backend_name == 'ibmq_qasm_simulator':
-        backend_name = 'qasm_simulator'
+    backend_name = _normalize_backend_name(backend_name)
     is_fake = backend_name.startswith("Fake")
 
     uiprint("Running circuit on {}...".format(backend_name))
@@ -307,8 +304,8 @@ def run_circuit(runtime, qc, shots, backend_name):
     if is_fake:
         try:
             fake_mod = importlib.import_module("qiskit_ibm_runtime.fake_provider")
-            cls = getattr(fake_mod, backend_name)
-            backend = cls()
+            backend_cls = getattr(fake_mod, backend_name)
+            backend = backend_cls()
         except Exception as e:
             msg = f"Fake backend '{backend_name}' is unavailable: {e}"
             uiprint(msg)
@@ -327,6 +324,7 @@ def run_circuit(runtime, qc, shots, backend_name):
             client.send_message("/error", msg)
             return {}
 
+#✅ Runtime sampler
     if runtime["token"]:
         uiprint("Attempting Qiskit Runtime...")
         counts, cloud_err = _direct_cloud_sampler(runtime, backend_name, shots, qc)
@@ -345,7 +343,7 @@ def run_circuit(runtime, qc, shots, backend_name):
     client.send_message("/error", msg)
     return {}
 
-
+#✅ Parse QASM input and send counts back over OSC, basically same with the old version, except for the shots argument.
 def parse_qasm(runtime, qasm_text, shots_arg=1024, backend_name='qasm_simulator'):
     qc = QuantumCircuit().from_qasm_str(qasm_text)
     if shots_arg is not None:
@@ -358,7 +356,7 @@ def parse_qasm(runtime, qasm_text, shots_arg=1024, backend_name='qasm_simulator'
 
     counts = run_circuit(runtime, qc, shots, backend_name)
     uiprint("Sending result counts back to Client")
-    client.send_message("/info", "Retrieving results from OSC-Qasm..." )
+    client.send_message("/info", "Retrieving results from OSC-Qasm...")
     # list comprehension that converts a Dict into an
     # interleaved string list: [key1, value1, key2, value2...]
     sorted_counts = {}
@@ -370,6 +368,7 @@ def parse_qasm(runtime, qasm_text, shots_arg=1024, backend_name='qasm_simulator'
     counts_list = " ".join(counts_list)
     client.send_message("/counts", counts_list)
 
+#✅ Build a runtime-aware OSC dispatcher for /QuTune. Here includes deglobalize the callback of Qutune
 def _build_dispatcher(runtime):
     callback = dispatcher.Dispatcher()
 
@@ -384,12 +383,13 @@ def _build_dispatcher(runtime):
     callback.map("/QuTune", _handle_qasm)
     return callback
 
-
-def CLI(UDP_IP, RECEIVE_PORT, SEND_PORT, TOKEN, HUB, PROJECT, REMOTE):
+#✅ basically same with the old version, with `local_ip` and `callback` extracted into helper functions
+#❓ If GUI works, then 'async def server_process(args)' works, then CLI should work. but still need to try CLI
+def CLI(UDP_IP, RECEIVE_PORT, SEND_PORT, TOKEN, REGION, INSTANCE, REMOTE):
 
     global client, ERR_SEP
     ERR_SEP = '----------------------------------------' # For FileLikeErrorOSC() class
-    runtime = _configure_runtime(TOKEN, HUB, PROJECT)
+    runtime = _configure_runtime(TOKEN, REGION, INSTANCE)
     if UDP_IP=="localhost":
         UDP_IP="127.0.0.1"
 
@@ -404,7 +404,7 @@ def CLI(UDP_IP, RECEIVE_PORT, SEND_PORT, TOKEN, HUB, PROJECT, REMOTE):
     uiprint("Server Sending back on {} port {}".format(client._address,  client._port))
     server.serve_forever()
 
-
+#✅ basically same with the old version, `wGroup`/`wHUB` and `wPROJECT` consolidated into `wREGION` and `wINSTANCE`
 async def server_process(args):
     global client, ERR_SEP
     ERR_SEP = '----------------------------------------' # For FileLikeErrorOSC() class
@@ -415,10 +415,10 @@ async def server_process(args):
     wRECEIVE_PORT = int(args[1])
     wSEND_PORT = int(args[2])
     wTOKEN = args[3]
-    wHUB = args[4]
-    wPROJECT = args[5]
+    wREGION = args[4]
+    wINSTANCE = args[5]
     wREMOTE = args[6]
-    runtime = _configure_runtime(wTOKEN, wHUB, wPROJECT)
+    runtime = _configure_runtime(wTOKEN, wREGION, wINSTANCE)
     if wUDP_IP=="localhost":
         wUDP_IP="127.0.0.1"
     local_ip = _resolve_local_ip(wREMOTE)
@@ -436,7 +436,7 @@ async def server_process(args):
     uiprint("Server has stopped now.")
     client.send_message("/info", "OSC-Qasm Server has Stopped.")
 
-
+#✅ basically same with the old version, deleted pythonPrint(received) 
 def GUI():
     @eel.expose
     def start(*args):
@@ -449,7 +449,7 @@ def GUI():
         server_on = False
     eel.start('index.html', cmdline_args=['-incognito'],size=(840,480),block=True)
 
-
+#✅ basically same with the old version, fix and rename '--hub';'--group'; '--project' to '--region'/'--instance', same changes are made in osc_qasm.maxref.xml, GUI/index.html, and README.md
 if __name__ == '__main__':
     global HEADLESS
     p = argparse.ArgumentParser()
@@ -458,8 +458,8 @@ if __name__ == '__main__':
     p.add_argument('send_port', type=int, nargs='?', default=1417, help='The port that OSC-Qasm will use to send messages back to the Client (the client\'s listening port). Default port is 1417')
     p.add_argument('ip', nargs='?', default='127.0.0.1', help='The IP address to where the retrieved results will be sent to (Where the Client is located). Default IP is 127.0.0.1 (localhost)')
     p.add_argument('--token', help='IBM Cloud API Key / Runtime token for running circuits on IBM hardware')
-    p.add_argument('--hub', default='us-east', help='IBM Runtime region, for example us-east or eu-de')
-    p.add_argument('--project', default='open-instance', help='IBM Runtime instance or CRN, defaults to open-instance')
+    p.add_argument('--region', default='us-east', help='IBM Runtime region, for example us-east or eu-de')
+    p.add_argument('--instance', default='open-instance', help='IBM Runtime instance or CRN, defaults to open-instance')
     p.add_argument('--remote', nargs='?', default=False, help='Declare this as a remote server. In this case, OSC-Qasm will be listenning to messages coming into the network adapter address. If there is a specific network adapter IP you want to listen in, add it as an argument here')
     p.add_argument('--headless', nargs='?', type=bool, const=True, default=False, help='Run OSC-Qasm in headless mode. This is useful if you don\'t want to launch the GUI and only work in the terminal.')
 
@@ -469,6 +469,8 @@ if __name__ == '__main__':
     flerr = FileLikeErrorOSC()
     sys.stderr = flerr
 
+
+#✅ drop the old args.token / hub / group / project validation path in favor of the new Runtime setup flow
     HEADLESS = args.headless
 
     if not HEADLESS:
@@ -480,12 +482,13 @@ if __name__ == '__main__':
         else:
             eel.print(*message)
 
+#❓ need some changes here?
     uiprint('================================================')
     uiprint(' OSC_QASM by OCH & Itaborala @ QuTune (v2.1.2) ')
     uiprint(' https://iccmr-quantum.github.io               ')
     uiprint('================================================')
 
     if HEADLESS:
-        CLI(args.ip, args.receive_port, args.send_port, args.token, args.hub, args.project, args.remote)
+        CLI(args.ip, args.receive_port, args.send_port, args.token, args.region, args.instance, args.remote)
     else:
         GUI()
