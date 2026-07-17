@@ -56,11 +56,11 @@
 									<div id="ibmq" style="display:none;">
                                         <label title="Token (IBM Cloud API Key)" for="token">Token (IBM Cloud API Key):</label><br>
                                         <input title="Token (IBM Cloud API Key)" type="password" id="token" name="token" value="false"><br><br>
-                                        <label title="Runtime region (e.g. us-east or eu-de)" for="hub">Hub:</label><br>
-                                        <input title="Runtime region (e.g. us-east or eu-de)" type="text" id="hub" name="hub" value="us-east"><br><br>
+                                        <label title="Runtime region (e.g. us-east or eu-de)" for="region">Region:</label><br>
+                                        <input title="Runtime region (e.g. us-east or eu-de)" type="text" id="region" name="region" value="us-east"><br><br>
                                         <!-- Group removed -->
-                                        <label title="Project (CRN)" for="project">Project (CRN):</label><br>
-                                        <input title="Project (CRN)" type="text" id="project" name="project" value="open-instance">
+                                        <label title="Runtime instance or CRN" for="instance">Instance (CRN):</label><br>
+                                        <input title="Runtime instance or CRN" type="text" id="instance" name="instance" value="open-instance">
                                     </div>
                                 </td>
                             </tr>
@@ -133,8 +133,8 @@
 		var remote = document.getElementById('remote').value;
 		var remote_check = document.getElementById('remote_check').checked;
 		var token = document.getElementById('token').value;
-		var hub = document.getElementById('hub').value;
-        var project = document.getElementById('project').value;
+		var region = document.getElementById('region').value;
+        var instance = document.getElementById('instance').value;
 
 		function update_vars() {
 			receive_port = document.getElementById('receive_port').value;
@@ -148,8 +148,8 @@
 				remote = "false";
 			}
 			token = document.getElementById('token').value;
-			hub = document.getElementById('hub').value;
-            project = document.getElementById('project').value;
+			region = document.getElementById('region').value;
+            instance = document.getElementById('instance').value;
 		}
 
 		function remote_checkbox(check){
@@ -172,7 +172,7 @@
 
 		function startstop(){
             if (submit=="Start") {
-                eel.start(ip,receive_port,send_port,token,hub,project,remote);
+                eel.start(ip,receive_port,send_port,token,region,instance,remote);
                 document.getElementById('submit').value = "Stop";
             } else {
                 eel.stop();
