@@ -156,7 +156,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 0,
 									"patching_rect" : [ 47.0, 69.5, 225.0, 20.0 ],
-									"text" : "sending Qasm to Quamtum Hardware"
+									"text" : "sending Qasm to Quantum Hardware"
 								}
 
 							}
