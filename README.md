@@ -315,7 +315,7 @@ Update pip and setuptools
 - Note: if for some reason you don't have pip, please [install it](https://phoenixnap.com/kb/install-pip-windows)
 
 Install qiskit, qiskit-ibm-runtime, python-osc, eel, pyinstaller and numpy
-- `pip install qiskit qiskit-ibm-runtime python-osc eel pyinstaller numpy`
+- `pip install qiskit==2.4.1 qiskit-ibm-runtime==0.47.0 python-osc==1.10.2 eel==0.18.2 pyinstaller==6.20.0 numpy==2.2.6`
 
 Please note that the **GUI** mode requires google chrome browser to be installed.
 
